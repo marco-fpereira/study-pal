@@ -1,3 +1,4 @@
+import os
 import uuid
 from config.qdrant_config import QdrantConfig
 from langchain_unstructured import UnstructuredLoader
@@ -8,6 +9,8 @@ from utils.language_detector import detect_language
 
 class VectorDBRepository:
     def __init__(self):
+        # Use high-resolution parsing to capture more semantic details, which can improve embedding quality and retrieval relevance.
+        self.parsing_strategy = os.getenv("VECTOR_DB_PARSING_STRATEGY", "hi_res")
         self.config = QdrantConfig()
         self.config.create_collection()
 
@@ -46,11 +49,9 @@ class VectorDBRepository:
 
                 # split the document into elements preserve structure (paragraphs, headings, etc.) and 
                 # return those as individual langchain Document objects for better chunking and retrieval
-                
                 chunking_strategy="by_title",
                 
-                # Use high-resolution parsing to capture more semantic details, which can improve embedding quality and retrieval relevance.
-                strategy="hi_res",
+                strategy=self.parsing_strategy,
                 
                 # Use the detected language to improve parsing accuracy
                 languages=languages

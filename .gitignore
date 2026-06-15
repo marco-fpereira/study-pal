@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 /app/.env
+/infra/mcp-server/.env
 
 # VsCode
 .vscode/

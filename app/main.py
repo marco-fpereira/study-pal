@@ -1,3 +1,5 @@
+import asyncio
+import nest_asyncio
 import os
 import tempfile
 import shutil
@@ -9,6 +11,8 @@ from service.llm_chat_service import LLMChatService
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 from transformers.utils import logging
+
+nest_asyncio.apply()
 
 # load environment variables from .env file
 load_dotenv()
@@ -193,14 +197,25 @@ if "llm_chat_service" not in st.session_state:
         model_name=st.session_state.selected_model,
     )
 
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(st.session_state.llm_chat_service.initialize())
+
 session_id = get_session_id()
 history = st.session_state.llm_chat_service.get_session_history(session_id=session_id)
 # Render existing messages
 if history:
     for message in history:
-        role = "user" if message.type == "human" else "assistant"
-        with st.chat_message(role):
-            st.markdown(message.content)
+        role = None
+        if message.type == "human":
+            role = "user"
+        elif message.type == "ai":
+            role = "assistant"
+        else:
+            continue
+
+        if role and message.content:
+            with st.chat_message(role):
+                st.markdown(message.content)
 
 user_input = st.chat_input(f"Ask AI about {active_subject.replace('_', ' ')}…")
 
@@ -209,9 +224,12 @@ if user_input:
         st.markdown(user_input)
 
     with st.chat_message('assistant'):
-        response = st.session_state.llm_chat_service.generate_response(
-            session_id=session_id,
-            query=user_input
+        loop = asyncio.get_event_loop()
+        response = loop.run_until_complete(
+            st.session_state.llm_chat_service.generate_response(
+                session_id=session_id,
+                query=user_input
+            )
         )
         st.markdown(response["output"])
     
