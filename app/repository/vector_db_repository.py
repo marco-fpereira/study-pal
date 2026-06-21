@@ -1,9 +1,11 @@
 import os
 import uuid
 from config.qdrant_config import QdrantConfig
+from langchain_core.documents import Document
 from langchain_unstructured import UnstructuredLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client.http import models
+from qdrant_client.models import Filter
 from utils.file_utils import file_exists
 from utils.language_detector import detect_language
 
@@ -13,6 +15,13 @@ class VectorDBRepository:
         self.parsing_strategy = os.getenv("VECTOR_DB_PARSING_STRATEGY", "hi_res")
         self.config = QdrantConfig()
         self.config.create_collection()
+        self.retriever = self.config.get_vector_store().as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={
+                "score_threshold": 0.75,
+                "k": 5,
+            },
+        )
 
 
     def ingest_document(
@@ -86,38 +95,52 @@ class VectorDBRepository:
 
 
     def retrieve(
-        self, 
-        session_id: str, 
+        self,
         query: str,
         k=5
-    ) -> list[str]:
+    ) -> list[Document]:
         """
         Retrieve relevant document chunks from Qdrant based on query, with tenant and optional subject filtering.
 
         Args:
-            session_id: str - Tenant identifier for multi-tenancy isolation.
             query: str - User's search query.
             k: int - Number of top results to retrieve.
 
         Returns:
             List of relevant document chunks as strings.
         """
-        results = self.config.get_vector_store().similarity_search(
-            query=query,
-            k=k,
-            filter=models.Filter(
+        
+        results = self.retriever.invoke(query)
+        if len(results) > k:
+            results = results[:k]
+
+        return results
+
+
+    def get_collection_topics(
+        self,
+        session_id: str
+    ) -> list[Document]:
+        records, next_page_offset = self.config.get_client().scroll(
+            collection_name=self.config.get_collection(),
+            scroll_filter= Filter(
                 must=[
                     models.FieldCondition(
-                        key="metadata.session_id", # Query filter isolated based on user-id metadata.
-                        match=models.MatchValue(
-                            value=session_id
-                        )
+                        key="metadata.session_id",
+                        match=models.MatchValue(value=session_id),
                     )
                 ]
-            )
+            ),
+            limit=100,          # Adjust depending on collection size
+            with_payload=True,  
+            with_vectors=False   # No need to download heavy vectors for topic modeling
         )
 
-        return [doc.page_content for doc in results]
+        documents = [
+            Document(page_content=record.payload["page_content"]) 
+            for record in records if "page_content" in record.payload
+        ]
+        return documents
 
 
     def list_subjects(self, session_id: str) -> list[str]:
