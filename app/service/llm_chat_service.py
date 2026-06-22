@@ -170,14 +170,19 @@ Instructions:
     # ------------------------------------------------------------------ #
 
     def __inject_context(self, state: ChatState) -> dict:
+        human_message = HumanMessage(content=state["input"])
+
         context = state.get("context", "")
-        if not context:
-            return {}
+
+        system_message = SystemMessage(
+            content=("No context retrieved for this turn" if not context 
+                   else f"Retrieved context for this turn:\n\n{context}")
+        )
+            
         return {
-            "messages": [
-                SystemMessage(content=f"Retrieved context for this turn:\n\n{context}")
-            ]
+            "messages": [ system_message, human_message ]
         }
+
 
     # ------------------------------------------------------------------ #
     #  Graph                                                             #

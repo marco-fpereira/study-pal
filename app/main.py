@@ -211,8 +211,10 @@ if "llm_chat_service" not in st.session_state or st.session_state.llm_chat_servi
         model_name=st.session_state.selected_model,
     )
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(st.session_state.llm_chat_service.initialize())
+    #loop = asyncio.get_event_loop()
+    asyncio.run(
+        st.session_state.llm_chat_service.initialize()
+    )
 
 session_id = get_session_id()
 history = st.session_state.llm_chat_service.get_session_history(session_id=session_id)
@@ -241,9 +243,10 @@ if st.session_state.toggle_exam_mode_enabled:
 
         submit_button = st.form_submit_button("Generate Questions")
         if submit_button:
-            query = f"Generate questions about the below topics and return them as an HTML to test user's knowledge.\n\nTopics:\n{"\n- ".join(topics)}"
-            loop = asyncio.get_event_loop()
-            response = loop.run_until_complete(
+            topics_str = "\n- ".join(topics)
+            query = f"Generate questions about the below topics and return them as an HTML to test user's knowledge.\n\nTopics:\n{topics_str}"
+            #loop = asyncio.get_event_loop()
+            response = asyncio.run(
                 st.session_state.llm_chat_service.generate_response(
                     session_id=session_id,
                     query=query,
@@ -251,6 +254,7 @@ if st.session_state.toggle_exam_mode_enabled:
                 )
             )
 
+            # TODO: como renderizar o HTML corretamente?
             st.markdown(response["output"], unsafe_allow_html=True)
 
 else:
@@ -272,8 +276,8 @@ else:
             st.markdown(user_input)
 
         with st.chat_message('assistant'):
-            loop = asyncio.get_event_loop()
-            response = loop.run_until_complete(
+            #loop = asyncio.get_event_loop()
+            response = asyncio.run(
                 st.session_state.llm_chat_service.generate_response(
                     session_id=session_id,
                     query=user_input,
