@@ -18,7 +18,7 @@ class VectorDBRepository:
         self.retriever = self.config.get_vector_store().as_retriever(
             search_type="similarity_score_threshold",
             search_kwargs={
-                "score_threshold": 0.75,
+                "score_threshold": 0.7,
                 "k": 5,
             },
         )

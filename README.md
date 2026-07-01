@@ -213,3 +213,6 @@ The LLM provider, model, and temperature are configurable at runtime through the
 1. **Document ingestion** — Uploaded files are parsed by `UnstructuredLoader` using `hi_res` strategy to preserve semantic structure (headings, paragraphs, tables). The resulting chunks are embedded and stored in Qdrant.
 2. **Query handling** — When a user asks a question, `LLMChatService` loads the session's chat history from MongoDB, retrieves the most relevant document chunks from Qdrant, and builds a prompt containing the context, history, and user query.
 3. **Response generation** — The LLM generates a response grounded in the retrieved context. The response and updated history are persisted back to MongoDB, and the source documents are surfaced in the UI.
+
+## TODO: What is next?
+Add Q&A format - a MCP server to generate an HTML file in the format of an exam.

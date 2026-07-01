@@ -1,10 +1,11 @@
+import json
 from pathlib import Path
-from typing import Annotated, TypedDict, Sequence
+from typing import Annotated, TypedDict, Sequence, Literal
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
 from langgraph.graph import StateGraph, END
@@ -17,21 +18,6 @@ from model.enum.mcp_tool_enum import MCPToolsEnum
 from repository.mongodb_chat_history_repository import MongoChatHistoryRepository
 from repository.vector_db_repository import VectorDBRepository
 from service.mcp_service import MCPService
-
-
-class ContextMiddleware(AgentMiddleware):
-    async def before_model(self, state, runtime):
-        context = state.get("context", "")
-
-        state["messages"] = [
-            SystemMessage(
-                content=f"Retrieved Context:\n\n{context}"
-            ),
-            *state["messages"]
-        ]
-
-        return state
-
 
 class ChatState(TypedDict):
     """
@@ -70,28 +56,37 @@ class LLMChatService:
         self.model_name = model_name
         self.llm = llm_provider.get_llm_instance(model_name, temperature)
         self.question_generator_mcp_service = MCPService(server_name=MCPToolsEnum.QUESTION_GENERATOR)
+        self.__graph_exam = None
+        self.__graph_regular = None
 
 
-    async def initialize(self):
-        self.tools = await self.question_generator_mcp_service.get_available_tools()
+    async def get_graph_exam(self) -> StateGraph:
+        if self.__graph_exam is None:
+            tools = await self.question_generator_mcp_service.get_available_tools()
 
-        # create_agent() returns a Runnable, so we can directly use it as a node in the graph.
-        regular_agent = create_agent(
-            model=self.llm,
-            tools=[],
-            #middleware=[ContextMiddleware()],
-            system_prompt=self.__agent_prompt(enable_exam_mode=False)
-        )
+            for tool in tools:
+                if tool.name == "generate_exam_html":
+                    tool.return_direct = True
 
-        tools_agent = create_agent(
-            model=self.llm,
-            tools=self.tools,
-            #middleware=[ContextMiddleware()],
-            system_prompt=self.__agent_prompt(enable_exam_mode=True)
-        )
+            tools_agent = create_agent(
+                model=self.llm,
+                tools=tools,
+                system_prompt=self.__agent_prompt(enable_exam_mode=True)
+            )
+            self.__graph_exam = self.__build_graph(tools_agent)
+        return self.__graph_exam
 
-        self.__graph_exam    = self.__build_graph(tools_agent)
-        self.__graph_regular = self.__build_graph(regular_agent)
+
+    def get_graph_regular(self) -> StateGraph:
+        if self.__graph_regular is None:
+            # create_agent() returns a Runnable, so we can directly use it as a node in the graph.
+            regular_agent = create_agent(
+                model=self.llm,
+                tools=[],
+                system_prompt=self.__agent_prompt(enable_exam_mode=False)
+            )
+            self.__graph_regular = self.__build_graph(regular_agent)
+        return self.__graph_regular
 
 
     # ------------------------------------------------------------------ #
@@ -253,9 +248,13 @@ Instructions:
 
         config = {"configurable": {"thread_id": session_id}}
 
-        graph = self.__graph_exam if enable_exam_mode else self.__graph_regular
+        graph_exam = await self.get_graph_exam()
+        graph_regular = self.get_graph_regular()
+        graph = graph_exam if enable_exam_mode else graph_regular
 
         result = await graph.ainvoke({"input": query}, config=config)
+
+        self.__log_graph_state(graph, config, query)
 
         print("DEBUG - Full agent response:", result)
 
@@ -263,7 +262,8 @@ Instructions:
 
         messages = result.get("messages", [])
         for msg in reversed(messages):
-            if isinstance(msg, AIMessage) and msg.content:
+            isValidInstance = isinstance(msg, AIMessage) or (isinstance(msg, ToolMessage) and enable_exam_mode)
+            if isValidInstance and msg.content:
                 final_response = msg.content
                 break
 
@@ -292,23 +292,35 @@ Instructions:
         )
         context_text = "\n---\n".join([doc.page_content for doc in context_docs])
 
-        prompt = ChatPromptTemplate.from_template(
-            "You are given a list of text fragments extracted from a database vector store.\n"
-            "Analyze the texts and summarize their main topics or themes.\n"
-            "Return them as a bulleted list with a 1-sentence explanation for each.\n"
-            "Separate each item of the list by the `\r` scape charactere\n\n"
-            "Do not return any header or context for the list.\n"
-            "Example response:\ntopic lorem - simply dummy text of the printing and typesetting industry\rSurvival - It has survived not the leap into electronic typesetting"
-            "Texts:\n{context}"
-        )
+        chat_prompt_template = """
+You are given a list of text fragments extracted from a database vector store.
+Analyze the texts and summarize their main topics or themes.
+Return them as a json list with a 1-sentence explanation for each **WITHOUT ANY EXPLANATION OF THE CONTENT, JUST THE CRUDE JSON**.
+Example response:
+[
+    "topic lorem - simply dummy text of the printing and typesetting industry",
+    "Survival - It has survived not the leap into electronic typesetting"
+]
+Texts:
+{context}
+"""
+
+        prompt = ChatPromptTemplate.from_template(chat_prompt_template)
 
         chain = prompt | self.llm
 
         response = chain.invoke({"context": context_text})
 
-        db_context_topics = [topic.replace("\n", "") for topic in response.content.split("\r") if topic.strip()]
+        try:
+            response_content = response.content
 
-        return db_context_topics
+            response_body = response_content[response_content.find('['):response_content.find(']')+1].replace("\n", "")
+
+            db_context_topics = json.loads(response_body)
+
+            return db_context_topics
+        except Exception as e:
+            print(f"Error getting source document context. Details: {e}")
 
 
     def get_session_history(self, session_id: str) -> Sequence[BaseMessage]:
@@ -323,7 +335,7 @@ Instructions:
         """
 
         config = {"configurable": {"thread_id": session_id}}
-        state = self.__graph_regular.get_state(config)
+        state = self.get_graph_regular().get_state(config)
         messages = state.values.get("messages", [])
 
         history = []
@@ -334,11 +346,21 @@ Instructions:
                     "content": msg.content
                 })
             elif isinstance(msg, AIMessage) and msg.content:
-                is_exam = msg.additional_kwargs.get("exam_mode", False)
+                exam_mode = msg.additional_kwargs.get("exam_mode", False)
                 history.append({
                     "role": "assistant",
                     "content": msg.content,
-                    "is_exam": is_exam
+                    "exam_mode": exam_mode
                 })
         
         return {"messages": history}
+
+
+    def __log_graph_state(self, graph: StateGraph, config: dict, input_state: str):
+        state = graph.get_state(config)
+        print(f'State: {state}')
+
+        history = list(graph.get_state_history(config))
+
+        for i, snapshot in enumerate(history):
+            print(f'Snapshot {i} - {snapshot}')
