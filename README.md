@@ -1,7 +1,7 @@
 # Study Pal - RAG Powered AI Study Assistant
 
-A Retrieval-Augmented Generation (RAG) chatbot built with LangChain, LangGraph and Streamlit that lets users upload documents, ask questions about them and create exam tests based on the uploaded documents. 
-The assistant answers and generates the HTML-formatted exam by using the content of the uploaded files as a knowledge base, enriched with persistent chat history per user and subject. This is automatically done by using LangGraph acts as an orchestrator. Instead of manually calling retrieval, the LLM, tools, and chat history, a workflow (graph), and LangGraph executes it while managing state between each step.
+A Retrieval-Augmented Generation (RAG) chatbot built with LangChain, LangGraph and Streamlit that allows users to upload documents, ask questions about them and create exam tests based on the uploaded documents. 
+The assistant answers and generates the HTML-formatted exam by using the content of the uploaded files as a knowledge base, enriched with persistent chat history per user and subject. This is automatically done with LangGraph acting as an orchestrator. Instead of manually calling retrieval, the LLM, tools, and chat history, a LangGraph workflow (graph) executes it while managing state between each step.
 
 ---
 
@@ -76,8 +76,7 @@ sequenceDiagram
 | Layer | Technology |
 |-------|------------|
 | UI | [Streamlit](https://streamlit.io/) |
-| LLM orchestration | [LangChain](https://www.langchain.com/) |
-| LLM orchestration | [LangGraph](https://www.langchain.com/langgraph) |
+| LLM orchestration | [LangChain](https://www.langchain.com/) and [LangGraph](https://www.langchain.com/langgraph) |
 | Document parsing | [Unstructured](https://unstructured.io/) (`langchain-unstructured`) |
 | Vector database | [Qdrant](https://qdrant.tech/) |
 | Chat history | [MongoDB](https://www.mongodb.com/) (`langchain-mongodb`) |
@@ -249,12 +248,12 @@ The LLM provider, model, and temperature are configurable at runtime through the
 │           language_detector.py                # Detect main language of the uploaded files 
 │           
 └───infra
-|   │   docker-compose.yml                      # MongoDB + Mongo Express + Qdrant infrastructure
-|   |
-│   └───mcp-server
-│           .env                                # Environment variables (not committed)
-│           env-template.txt                    # Environment variables template
-│           question_generator_server.py        # MCP server with tools for generating questions and generating HTML for exam mode
+    │   docker-compose.yml                      # MongoDB + Mongo Express + Qdrant infrastructure
+    |
+    └───mcp-server
+            .env                                # Environment variables (not committed)
+            env-template.txt                    # Environment variables template
+            question_generator_server.py        # MCP server with tools for generating questions and generating HTML for exam mode
 ```
 
 ---
