@@ -5,6 +5,7 @@ import time
 from dotenv import load_dotenv
 from jinja2 import Template, Environment, select_autoescape
 from mcp.server.fastmcp import FastMCP
+from model.question_model import QuestionList
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,7 +53,7 @@ load_dotenv()
 
 llm = os.getenv("LLM_PROVIDER", "gemini")
 llm_instance = get_llm_instance(llm_provider=llm)
-
+structured_llm_instance = llm_instance.with_structured_output(QuestionList)
 
 @mcp.tool(
     name="generate_exam_questions",
@@ -77,25 +78,9 @@ async def generate_exam_questions(
 
     try:
         prompt = """
-Based on the following content, generate up to {num_questions} multiple choice questions to test knowledge.
-Respond ONLY with a valid JSON array, no markdown, no explanation.
+Based on the following context, generate up to {num_questions} multiple choice questions to test knowledge.
 
-The final result must follow this exact structure:
-[
-    {{
-        "question": "Question text here",
-        "options": [
-            {{"id":"A","text":"option a"}},
-            {{"id":"B","text":"option b"}},
-            {{"id":"C","text":"option c"}},
-            {{"id":"D","text":"option d"}},
-        ],
-        "correct": "A",
-        "explanation": "Brief explanation of why this is correct"
-    }}
-]
-
-Content:
+Context:
 {context}
         """.format(
             num_questions=num_questions,
@@ -104,10 +89,10 @@ Content:
 
         logger.info("Invoking LLM with prompt for question generation...")
         start = time.perf_counter()
-        response = llm_instance.invoke(prompt)
+        response = structured_llm_instance.invoke(prompt)
         logger.info(f"LLM response received for question generation.\nQuestion generation time: {time.perf_counter() - start:.2f} seconds")
 
-        questions =  json.loads(response.content)
+        questions = [q.model_dump() for q in response.questions]
 
         logger.info(f"Questions successfully generated.\nQuestions:\n{questions}\n")
 
