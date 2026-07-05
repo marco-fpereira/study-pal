@@ -12,3 +12,4 @@ MONGO_PORT=27017
 MONGO_DATABASE_NAME=chat_history_db
 MONGO_USERNAME={your_username}
 MONGO_PASSWORD={your_password}
+VECTOR_DB_PARSING_STRATEGY={fast|hi_res}
